@@ -172,7 +172,6 @@ class EchoHandler(asyncore.dispatcher):
     NotImplemented = 'Not Implemented (501)'
     def start_validation(self):
         arr = self.data.replace('\r\n\r\n', '').split(self.newline)
-        Expect_host = arr[0].split(' ')[1].startswith('\\')
         HttpVersion = ''
         host = ''
         Sublink = ''
@@ -181,6 +180,7 @@ class EchoHandler(asyncore.dispatcher):
         valid = True
         host = ''
         port = 80
+        Expect_host = False
         # if Expect_host: # validate host part.
         #     if len(arr) != 1:
         #         host = arr[1].split(':')[1]
@@ -198,8 +198,9 @@ class EchoHandler(asyncore.dispatcher):
                     valid = False
                     reply = self.BadRequest
                 else:
-                    if Expect_host:
+                    if items[1].startswith('/'):
                         Sublink = items[1]
+                        Expect_host = True
                     else:
                         host = items[1]
                     HttpVersion = items[2]
@@ -230,7 +231,8 @@ class EchoHandler(asyncore.dispatcher):
         splited2 = host.split(':')
         if len(splited2) == 2:
             port = int(splited2[1])
-            host = splited2[0] + Sublink
+            host = splited2[0]
+        host = host
 
         if not valid:
             print(reply)
@@ -242,7 +244,7 @@ class EchoHandler(asyncore.dispatcher):
 
         # Send Request to Server.
         if valid:
-            sock_address = (host, port)
+            sock_address = ('info.cern.ch', port)
             request_packet = struct.pack(str(len(self.data))
                                          + 's', bytes(self.data, 'utf-8'))
 
