@@ -2,6 +2,12 @@
 import sys
 import os
 import enum
+import asyncore
+import socket
+import logging
+import struct
+
+clear = lambda: os.system('cls')  # on Windows System
 
 
 class HttpRequestInfo(object):
@@ -121,6 +127,158 @@ class HttpRequestState(enum.Enum):
     PLACEHOLDER = -1
 
 
+class EchoServer(asyncore.dispatcher):
+    """Receives connections and establishes handlers for each client.
+    """
+
+    def __init__(self, address):
+        self.logger = logging.getLogger('EchoServer')
+        asyncore.dispatcher.__init__(self)
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind(address)
+        self.address = self.socket.getsockname()
+        self.logger.debug('binding to %s', self.address)
+        self.listen(10)
+        print('Listening on the socket.')
+        return
+
+    def handle_accept(self):
+        # Called when a client connects to our socket
+        client_info = self.accept()
+        self.logger.debug('handle_accept() -> %s', client_info[1])
+        EchoHandler(sock=client_info[0])
+        # We only want to deal with one client at a time,
+        # so close as soon as we set up the handler.
+        # Normally you would not do this and the server
+        # would run forever or until it received instructions
+        # to stop.
+        # self.handle_close()
+        return
+
+    def handle_close(self):
+        self.logger.debug('handle_close()')
+        self.close()
+        return
+
+
+class EchoHandler(asyncore.dispatcher):
+    """Handles echoing messages from a single client.
+    """
+    data = ''
+    lastchar1 = ''
+    lastchar2 = ''
+    newline = '\r\n'
+    BadRequest = '401 Bad Request'
+    NotImplemented = 'Not Implemented (501)'
+    def start_validation(self):
+        arr = self.data.replace('\r\n\r\n', '').split(self.newline)
+        Expect_host = arr[0].split(' ')[1].startswith('\\')
+        HttpVersion = ''
+        host = ''
+        Sublink = ''
+        reply = ''
+        request_type = ''
+        valid = True
+        host = ''
+        port = 80
+        # if Expect_host: # validate host part.
+        #     if len(arr) != 1:
+        #         host = arr[1].split(':')[1]
+        #         valid = True
+        #     pass
+        # else:
+        #     valid = True
+        ############# validate the first string.
+        if valid:
+            items = arr[0].split(' ');
+            if items[0] == 'GET':
+                request_type = items[0]
+                valid = True  # First part.
+                if len(items) != 3:
+                    valid = False
+                    reply = self.BadRequest
+                else:
+                    if Expect_host:
+                        Sublink = items[1]
+                    else:
+                        host = items[1]
+                    HttpVersion = items[2]
+                    valid = True
+                    pass
+                pass
+            else:
+                valid = False
+                reply = self.NotImplemented
+            pass
+
+        # GET HOST
+        if Expect_host:  # validate host part.
+            if len(arr) != 1:
+                for i in range(1, len(arr)):
+                    splited = arr[i].split(':')
+                    if len(splited) != 2:  # must be 2 at least
+                        valid = False
+                        reply = self.BadRequest
+                    elif splited[0] == 'Host':
+                        host = splited[1]
+                        valid = True
+                pass
+            else:
+                valid = True
+        #####################
+        # Check for port.
+        splited2 = host.split(':')
+        if len(splited2) == 2:
+            port = int(splited2[1])
+            host = splited2[0] + Sublink
+
+        if not valid:
+            print(reply)
+        else:
+            print('Request Type:', request_type)
+            print('Version:', HttpVersion)
+            print('Host:', host)
+            print('Port:', port)
+
+        # Send Request to Server.
+        if valid:
+            sock_address = (host, port)
+            request_packet = struct.pack(str(len(self.data))
+                                         + 's', bytes(self.data, 'utf-8'))
+
+            httpSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            httpSocket.connect(sock_address)
+            httpSocket.sendto(request_packet, sock_address)
+
+            (received_packet, (sock_address)) = httpSocket.recvfrom(20000)
+            self.send(received_packet)
+            print('Reply sent back to client.')
+
+        else:
+            packed = struct.pack(str(len(reply)) + 's', bytes(reply, 'utf-8'))
+            self.send(packed)
+        self.close()
+        pass
+
+    def handle_read(self):
+        data_buff = self.recv(4096 * 4)
+        current = data_buff.decode("utf-8")
+        self.data += current
+        if self.data.endswith('\r\n\r\n'):
+            print('Send response now.')
+            self.start_validation()
+        else:
+            os.system('cls')
+        print(self.data)
+
+    # def handle_write(self):
+    # print('im here')
+    # sent = self.send(struct.pack(str(len(self.data))
+    #                             + 's', bytes(self.data, 'utf-8')))
+    # self.data = self.data[sent:]
+    # print('done')
+
+
 def entry_point(proxy_port_number):
     """
     Entry point, start your code here.
@@ -238,6 +396,7 @@ def sanitize_http_request(request_info: HttpRequestInfo) -> HttpRequestInfo:
     ret = HttpRequestInfo(None, None, None, None, None, None)
     return ret
 
+
 #######################################
 # Leave the code below as is.
 #######################################
@@ -260,7 +419,7 @@ def get_arg(param_index, default=None):
             print(e)
             print(
                 f"[FATAL] The comand-line argument #[{param_index}] is missing")
-            exit(-1)    # Program execution failed.
+            exit(-1)  # Program execution failed.
 
 
 def check_file_name():
@@ -284,7 +443,6 @@ def main():
 
     To add code that uses sockets, feel free to add functions
     above main and outside the classes.
-    """
     print("\n\n")
     print("*" * 50)
     print(f"[LOG] Printing command line arguments [{', '.join(sys.argv)}]")
@@ -294,6 +452,10 @@ def main():
     # This argument is optional, defaults to 18888
     proxy_port_number = get_arg(1, 18888)
     entry_point(proxy_port_number)
+    """
+
+    Socket = EchoServer(('127.0.0.1', 220))
+    asyncore.loop()
 
 
 if __name__ == "__main__":
