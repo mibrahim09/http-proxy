@@ -55,6 +55,9 @@ class HttpRequestInfo(object):
         # port is removed (because it goes into the request_port variable)
         self.headers = headers
 
+    def getKey(self):
+        return self.requested_host + self.requested_path
+
     def getClientInfo(self):
         return (self.requested_host, self.requested_port)
 
@@ -180,11 +183,10 @@ class EchoHandler(asyncore.dispatcher):
     """Handles echoing messages from a single client.
     """
     data = ''
-    lastchar1 = ''
-    lastchar2 = ''
+    LastChar1 = ''
+    LastChar2 = ''
     newline = '\r\n'
-    BadRequest = '401 Bad Request'
-    NotImplemented = 'Not Implemented (501)'
+    CachingTable = {}
 
     def handle_read(self):
         data_buff = self.recv(4096 * 4)
@@ -193,6 +195,11 @@ class EchoHandler(asyncore.dispatcher):
         if self.data.endswith('\r\n\r\n'):
             Packet, valid = http_request_pipeline(self.addr, self.data)
             if valid:
+                if Packet.getKey() in self.CachingTable:
+                    Cached = self.CachingTable[Packet.getKey()]
+                    self.send(Cached)
+                    self.close()
+                    return
 
                 sock_address = Packet.getClientInfo()
                 request_packet = Packet.to_byte_array(Packet.to_http_string())
@@ -203,6 +210,7 @@ class EchoHandler(asyncore.dispatcher):
 
                 (received_packet, (sock_address)) = httpSocket.recvfrom(20000)
                 self.send(received_packet)
+                self.CachingTable[Packet.getKey()] = received_packet
 
             else:
                 packed = Packet.to_byte_array(Packet.to_http_string())
@@ -241,6 +249,7 @@ def setup_sockets(proxy_port_number):
     Socket = EchoServer(('127.0.0.1', proxy_port_number))
     asyncore.loop()
     return None
+
 
 
 def http_request_pipeline(source_addr, http_raw_data):
