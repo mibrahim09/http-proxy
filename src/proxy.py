@@ -37,6 +37,7 @@ class HttpRequestInfo(object):
     NOTE: you need to implement to_http_string() for this class.
     """
     HTTP_REQUEST_TYPE = 'HTTP/1.0'
+
     def __init__(self, client_info, method: str, requested_host: str,
                  requested_port: int,
                  requested_path: str,
@@ -53,6 +54,9 @@ class HttpRequestInfo(object):
         # convert it to ("Host", "www.google.com") note that the
         # port is removed (because it goes into the request_port variable)
         self.headers = headers
+
+    def getClientInfo(self):
+        return (self.requested_host, self.requested_port)
 
     def SetHTTP(self, HTTP_REQUEST):
         self.HTTP_REQUEST_TYPE = HTTP_REQUEST
@@ -77,17 +81,16 @@ class HttpRequestInfo(object):
 
         ToRet += self.method + ' '
         if self.requested_path == '':
-             ToRet += self.requested_path
+            ToRet += self.requested_path
         else:
             ToRet += self.requested_path
         ToRet += ' ' + self.HTTP_REQUEST_TYPE + '\r\n'
 
         for item in self.headers:
-            ToRet += item[0]+ ': '+ item[1] + '\r\n'
+            ToRet += item[0] + ': ' + item[1] + '\r\n'
 
         ToRet += '\r\n'
         return ToRet
-
 
     def to_byte_array(self, http_string):
         """
@@ -114,8 +117,7 @@ class HttpErrorResponse(object):
         self.message = message
 
     def to_http_string(self):
-        """ Same as above """
-        pass
+        return str(str(self.code) + ' ' + self.message)
 
     def to_byte_array(self, http_string):
         """
@@ -275,8 +277,25 @@ class EchoHandler(asyncore.dispatcher):
         self.data += current
         if self.data.endswith('\r\n\r\n'):
             print('Send response now.')
-            # self.start_validation()
-            http_request_pipeline(self.addr, self.data)
+            Packet, valid = http_request_pipeline(self.addr, self.data)
+            if valid:
+
+                sock_address = Packet.getClientInfo()
+                request_packet = Packet.to_byte_array(Packet.to_http_string())
+
+                httpSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                httpSocket.connect(sock_address)
+                httpSocket.sendto(request_packet, sock_address)
+
+                (received_packet, (sock_address)) = httpSocket.recvfrom(20000)
+                self.send(received_packet)
+                print('Reply sent back to client.')
+
+            else:
+                packed = Packet.to_byte_array(Packet.to_http_string())
+                self.send(packed)
+            self.close()
+
         else:
             os.system('cls')
         print(self.data)
@@ -333,14 +352,23 @@ def http_request_pipeline(source_addr, http_raw_data):
     """
     # Parse HTTP request
     validity = check_http_request_validity(http_raw_data)
-    # Return error if needed, then:
-    # parse_http_request()
-    # sanitize_http_request()
-    # Validate, sanitize, return Http object.
-    print("*" * 50)
-    print("[http_request_pipeline] Implement me!")
-    print("*" * 50)
-    return None
+    if validity == HttpRequestState.GOOD:
+        print('GOOD AND READY')
+        Request = parse_http_request(source_addr, http_raw_data)
+        return Request, True
+    else:
+        code = 0
+        msg = ''
+        print('ERROR:', validity)
+        if validity == HttpRequestState.NOT_SUPPORTED:
+            code = 501
+            msg = 'Not Supported'
+        else:
+            code = 400
+            msg = 'Bad Request'
+        ErrorPacket = HttpErrorResponse(code, msg)
+        ErrorPacket.display()
+        return ErrorPacket, False
 
 
 def parse_http_request(source_addr, http_raw_data) -> HttpRequestInfo:
@@ -376,7 +404,6 @@ def parse_http_request(source_addr, http_raw_data) -> HttpRequestInfo:
     Host = firstReq[1]
     HTTP_REQUEST_TYPE = firstReq[2]
     HeadersList = []
-
 
     # Search for the Host & Fill the Headers.
     if Host.startswith('/'):
@@ -556,7 +583,7 @@ def main():
     print("*" * 50)
 
     # This argument is optional, defaults to 18888
-    proxy_port_number = get_arg(1, 9877)
+    proxy_port_number = get_arg(1, 18888)
     entry_point(proxy_port_number)
 
 
