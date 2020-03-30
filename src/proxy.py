@@ -36,7 +36,7 @@ class HttpRequestInfo(object):
 
     NOTE: you need to implement to_http_string() for this class.
     """
-
+    HTTP_REQUEST_TYPE = 'HTTP/1.0'
     def __init__(self, client_info, method: str, requested_host: str,
                  requested_port: int,
                  requested_path: str,
@@ -54,6 +54,9 @@ class HttpRequestInfo(object):
         # port is removed (because it goes into the request_port variable)
         self.headers = headers
 
+    def SetHTTP(self, HTTP_REQUEST):
+        self.HTTP_REQUEST_TYPE = HTTP_REQUEST
+
     def to_http_string(self):
         """
         Convert the HTTP request/response
@@ -70,11 +73,21 @@ class HttpRequestInfo(object):
         keeping it as a string in this stage is to ease
         debugging and testing.
         """
+        ToRet = '';
 
-        print("*" * 50)
-        print("[to_http_string] Implement me!")
-        print("*" * 50)
-        return None
+        ToRet += self.method + ' '
+        if self.requested_path == '':
+             ToRet += self.requested_path
+        else:
+            ToRet += self.requested_path
+        ToRet += ' ' + self.HTTP_REQUEST_TYPE + '\r\n'
+
+        for item in self.headers:
+            ToRet += item[0]+ ': '+ item[1] + '\r\n'
+
+        ToRet += '\r\n'
+        return ToRet
+
 
     def to_byte_array(self, http_string):
         """
@@ -170,6 +183,7 @@ class EchoHandler(asyncore.dispatcher):
     newline = '\r\n'
     BadRequest = '401 Bad Request'
     NotImplemented = 'Not Implemented (501)'
+
     def start_validation(self):
         arr = self.data.replace('\r\n\r\n', '').split(self.newline)
         HttpVersion = ''
@@ -181,14 +195,8 @@ class EchoHandler(asyncore.dispatcher):
         host = ''
         port = 80
         Expect_host = False
-        # if Expect_host: # validate host part.
-        #     if len(arr) != 1:
-        #         host = arr[1].split(':')[1]
-        #         valid = True
-        #     pass
-        # else:
-        #     valid = True
-        ############# validate the first string.
+
+        # validate the first string.
         if valid:
             items = arr[0].split(' ');
             if items[0] == 'GET':
@@ -232,7 +240,6 @@ class EchoHandler(asyncore.dispatcher):
         if len(splited2) == 2:
             port = int(splited2[1])
             host = splited2[0]
-        host = host
 
         if not valid:
             print(reply)
@@ -244,7 +251,7 @@ class EchoHandler(asyncore.dispatcher):
 
         # Send Request to Server.
         if valid:
-            sock_address = ('info.cern.ch', port)
+            sock_address = (host, port)
             request_packet = struct.pack(str(len(self.data))
                                          + 's', bytes(self.data, 'utf-8'))
 
@@ -268,7 +275,8 @@ class EchoHandler(asyncore.dispatcher):
         self.data += current
         if self.data.endswith('\r\n\r\n'):
             print('Send response now.')
-            self.start_validation()
+            # self.start_validation()
+            http_request_pipeline(self.addr, self.data)
         else:
             os.system('cls')
         print(self.data)
@@ -291,9 +299,6 @@ def entry_point(proxy_port_number):
     """
 
     setup_sockets(proxy_port_number)
-    print("*" * 50)
-    print("[entry_point] Implement me!")
-    print("*" * 50)
     return None
 
 
@@ -308,44 +313,29 @@ def setup_sockets(proxy_port_number):
     """
     print("Starting HTTP proxy on port:", proxy_port_number)
 
-    # when calling socket.listen() pass a number
-    # that's larger than 10 to avoid rejecting
-    # connections automatically.
-    print("*" * 50)
-    print("[setup_sockets] Implement me!")
-    print("*" * 50)
+    Socket = EchoServer(('127.0.0.1', proxy_port_number))
+    asyncore.loop()
     return None
-
-
-def do_socket_logic():
-    """
-    Example function for some helper logic, in case you
-    want to be tidy and avoid stuffing the main function.
-
-    Feel free to delete this function.
-    """
-    pass
 
 
 def http_request_pipeline(source_addr, http_raw_data):
     """
     HTTP request processing pipeline.
-
-    - Parses the given HTTP request
-    - Validates it
-    - Returns a sanitized HttpRequestInfo or HttpErrorResponse
-        based on request validity.
-
+    - Validates the given HTTP request and returns
+      an error if an invalid request was given.
+    - Parses it
+    - Returns a sanitized HttpRequestInfo
     returns:
      HttpRequestInfo if the request was parsed correctly.
      HttpErrorResponse if the request was invalid.
-
     Please don't remove this function, but feel
     free to change its content
     """
     # Parse HTTP request
-    parsed = parse_http_request(source_addr, http_raw_data)
-
+    validity = check_http_request_validity(http_raw_data)
+    # Return error if needed, then:
+    # parse_http_request()
+    # sanitize_http_request()
     # Validate, sanitize, return Http object.
     print("*" * 50)
     print("[http_request_pipeline] Implement me!")
@@ -360,43 +350,157 @@ def parse_http_request(source_addr, http_raw_data) -> HttpRequestInfo:
 
     it does NOT validate the HTTP request.
     """
-    print("*" * 50)
-    print("[parse_http_request] Implement me!")
-    print("*" * 50)
+    print("[parse_http_request] Parsing the HTTP Request")
+
+    # def __init__(self, client_info, method: str, requested_host: str,
+    #              requested_port: int,
+    #              requested_path: str,
+    #              headers: list):
+
+    # Headers will be represented as a list of tuples
+    # for example ("Host", "www.google.com")
+    # if you get a header as:
+    # "Host: www.google.com:80"
+    # convert it to ("Host", "www.google.com") note that the
+    # port is removed (because it goes into the request_port variable)
+
+    method = ''
+    Host = ''
+    HTTP_REQUEST_TYPE = ''
+    Path = ''
+    Requested_Port = 80
+
+    arr = http_raw_data.replace('\r\n\r\n', '').split('\r\n')
+    firstReq = arr[0].split(' ')
+    method = firstReq[0]
+    Host = firstReq[1]
+    HTTP_REQUEST_TYPE = firstReq[2]
+    HeadersList = []
+
+
+    # Search for the Host & Fill the Headers.
+    if Host.startswith('/'):
+        Path = Host
+        # Get the Host.
+        for i in range(1, len(arr)):
+            splited = arr[i].split(':')
+            if splited[0] == 'Host':
+                Host = splited[1].replace(' ', '')
+                HeadersList.append(['Host', Host])
+            else:
+                HeadersList.append([splited[0], splited[1]])
+        pass
+    # The Port.
+    Splited2 = Host.split(':')
+    if len(Splited2) == 2:
+        Requested_Port = int(Splited2[1])
+        Host = Splited2[0]
+
     # Replace this line with the correct values.
-    ret = HttpRequestInfo(None, None, None, None, None, None)
+    ret = HttpRequestInfo(source_addr, method, Host, Requested_Port, Path, HeadersList)
+    ret.SetHTTP(HTTP_REQUEST_TYPE)
     return ret
 
 
-def check_http_request_validity(http_request_info: HttpRequestInfo) -> HttpRequestState:
+def check_http_request_validity(http_raw_data) -> HttpRequestState:
     """
-    Checks if an HTTP response is valid
-
+    Checks if an HTTP request is valid
     returns:
     One of values in HttpRequestState
     """
-    print("*" * 50)
-    print("[check_http_request_validity] Implement me!")
-    print("*" * 50)
-    # return HttpRequestState.GOOD (for example)
-    return HttpRequestState.PLACEHOLDER
+    arr = http_raw_data.replace('\r\n\r\n', '').split('\r\n')
+    HttpVersion = ''
+    host = ''
+    Sublink = ''
+    reply = ''
+    request_type = ''
+    valid = True
+    NotSupported = False
+    host = ''
+    port = 80
+    Expect_host = False
+
+    # validate the first string.
+    items = arr[0].split(' ');
+    request_type = items[0]
+    valid = True  # First part.
+    if len(items) != 3:
+        valid = False
+        return HttpRequestState.INVALID_INPUT
+    else:
+        if items[1].startswith('/'):
+            Sublink = items[1]
+            Expect_host = True
+        else:
+            host = items[1]
+            HttpVersion = items[2]
+            valid = True
+        pass
+    pass
+    if items[0] == 'HEAD' or items[0] == 'POST' or items[0] == 'PUT':
+        NotSupported = True
+    elif items[0] == 'GET':
+        valid = True
+    else:
+        valid = False
+    pass
+    if items[2] == '':
+        valid = False
+
+    # GET HOST
+    if valid:  # validate host part.
+        if Expect_host and len(arr) < 2:
+            valid = False
+        if valid and len(arr) != 1:
+            for i in range(1, len(arr)):
+                if arr[i] == '':
+                    break
+                splited = arr[i].split(':')
+                if len(splited) != 2:  # must be 2 at least
+                    valid = False
+                    break
+                elif splited[0] == 'Host':
+                    host = splited[1]
+                    valid = True
+            pass
+        else:
+            valid = False
+        #####################
+        # Check for port.
+        ToSplit = host.replace('https://', '')
+        ToSplit = host.replace('http://', '')
+        splited2 = ToSplit.split(':')
+        if len(splited2) == 2:
+            port = int(splited2[1])
+            host = splited2[0]
+
+    if not valid:
+        print(reply)
+    else:
+        print('Request Type:', request_type)
+        print('Version:', HttpVersion)
+        print('Host:', host)
+        print('Port:', port)
+
+    if not valid:
+        return HttpRequestState.INVALID_INPUT
+
+    if NotSupported:
+        return HttpRequestState.NOT_SUPPORTED
+    return HttpRequestState.GOOD
 
 
-def sanitize_http_request(request_info: HttpRequestInfo) -> HttpRequestInfo:
+def sanitize_http_request(request_info: HttpRequestInfo):
     """
-    Puts an HTTP request on the sanitized (standard form)
-
+    Puts an HTTP request on the sanitized (standard) form
+    by modifying the input request_info object.
+    for example, expand a full URL to relative path + Host header.
     returns:
-    A modified object of the HttpRequestInfo with
-    sanitized fields
-
-    for example, expand a URL to relative path + Host header.
+    nothing, but modifies the input object
     """
     print("*" * 50)
     print("[sanitize_http_request] Implement me!")
     print("*" * 50)
-    ret = HttpRequestInfo(None, None, None, None, None, None)
-    return ret
 
 
 #######################################
@@ -442,9 +546,9 @@ def check_file_name():
 def main():
     """
     Please leave the code in this function as is.
-
     To add code that uses sockets, feel free to add functions
     above main and outside the classes.
+    """
     print("\n\n")
     print("*" * 50)
     print(f"[LOG] Printing command line arguments [{', '.join(sys.argv)}]")
@@ -452,12 +556,8 @@ def main():
     print("*" * 50)
 
     # This argument is optional, defaults to 18888
-    proxy_port_number = get_arg(1, 18888)
+    proxy_port_number = get_arg(1, 9877)
     entry_point(proxy_port_number)
-    """
-
-    Socket = EchoServer(('127.0.0.1', 9987))
-    asyncore.loop()
 
 
 if __name__ == "__main__":
