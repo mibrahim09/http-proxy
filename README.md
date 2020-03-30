@@ -1,5 +1,5 @@
 # IMPORTANT NOTE
-This Proxy isnt a complete proxy. Its only does basic GET requests.
+This proxy isnt a complete proxy. Its only does basic GET requests.
 
 # HTTP Proxy
 The Hypertext Transfer Protocol or (HTTP) is the protocol used for communication on this web. That is, it is the protocol which defines how your web browser requests resources from a web server and how the server responds.
