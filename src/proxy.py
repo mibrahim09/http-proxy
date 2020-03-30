@@ -186,97 +186,11 @@ class EchoHandler(asyncore.dispatcher):
     BadRequest = '401 Bad Request'
     NotImplemented = 'Not Implemented (501)'
 
-    def start_validation(self):
-        arr = self.data.replace('\r\n\r\n', '').split(self.newline)
-        HttpVersion = ''
-        host = ''
-        Sublink = ''
-        reply = ''
-        request_type = ''
-        valid = True
-        host = ''
-        port = 80
-        Expect_host = False
-
-        # validate the first string.
-        if valid:
-            items = arr[0].split(' ');
-            if items[0] == 'GET':
-                request_type = items[0]
-                valid = True  # First part.
-                if len(items) != 3:
-                    valid = False
-                    reply = self.BadRequest
-                else:
-                    if items[1].startswith('/'):
-                        Sublink = items[1]
-                        Expect_host = True
-                    else:
-                        host = items[1]
-                    HttpVersion = items[2]
-                    valid = True
-                    pass
-                pass
-            else:
-                valid = False
-                reply = self.NotImplemented
-            pass
-
-        # GET HOST
-        if Expect_host:  # validate host part.
-            if len(arr) != 1:
-                for i in range(1, len(arr)):
-                    splited = arr[i].split(':')
-                    if len(splited) != 2:  # must be 2 at least
-                        valid = False
-                        reply = self.BadRequest
-                    elif splited[0] == 'Host':
-                        host = splited[1]
-                        valid = True
-                pass
-            else:
-                valid = True
-        #####################
-        # Check for port.
-        splited2 = host.split(':')
-        if len(splited2) == 2:
-            port = int(splited2[1])
-            host = splited2[0]
-
-        if not valid:
-            print(reply)
-        else:
-            print('Request Type:', request_type)
-            print('Version:', HttpVersion)
-            print('Host:', host)
-            print('Port:', port)
-
-        # Send Request to Server.
-        if valid:
-            sock_address = (host, port)
-            request_packet = struct.pack(str(len(self.data))
-                                         + 's', bytes(self.data, 'utf-8'))
-
-            httpSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            httpSocket.connect(sock_address)
-            httpSocket.sendto(request_packet, sock_address)
-
-            (received_packet, (sock_address)) = httpSocket.recvfrom(20000)
-            self.send(received_packet)
-            print('Reply sent back to client.')
-
-        else:
-            packed = struct.pack(str(len(reply)) + 's', bytes(reply, 'utf-8'))
-            self.send(packed)
-        self.close()
-        pass
-
     def handle_read(self):
         data_buff = self.recv(4096 * 4)
         current = data_buff.decode("utf-8")
         self.data += current
         if self.data.endswith('\r\n\r\n'):
-            print('Send response now.')
             Packet, valid = http_request_pipeline(self.addr, self.data)
             if valid:
 
@@ -289,7 +203,6 @@ class EchoHandler(asyncore.dispatcher):
 
                 (received_packet, (sock_address)) = httpSocket.recvfrom(20000)
                 self.send(received_packet)
-                print('Reply sent back to client.')
 
             else:
                 packed = Packet.to_byte_array(Packet.to_http_string())
@@ -299,13 +212,6 @@ class EchoHandler(asyncore.dispatcher):
         else:
             os.system('cls')
         print(self.data)
-
-    # def handle_write(self):
-    # print('im here')
-    # sent = self.send(struct.pack(str(len(self.data))
-    #                             + 's', bytes(self.data, 'utf-8')))
-    # self.data = self.data[sent:]
-    # print('done')
 
 
 def entry_point(proxy_port_number):
